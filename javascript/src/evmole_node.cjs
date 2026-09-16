@@ -5,4 +5,4 @@ const bytes = require("fs").readFileSync(path);
 
 initSync({ module: bytes });
 
-export { contractInfo } from "../dist/evmole.js";
+export { contractInfo, validateStorage } from "../dist/evmole.js";

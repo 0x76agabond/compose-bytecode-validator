@@ -1,4 +1,4 @@
-export { contractInfo } from "../dist/evmole.js";
+export { contractInfo, validateStorage } from "../dist/evmole.js";
 import initEvmole from "../dist/evmole.js";
 
 await initEvmole({ module_or_path: new URL('evmole_bg.wasm', import.meta.url) })

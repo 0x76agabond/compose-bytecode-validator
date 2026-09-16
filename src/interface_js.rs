@@ -2,6 +2,9 @@ use alloy_primitives::hex;
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 
+use crate::compose::VirtualStorageLayout;
+use crate::storage_validation::{StorageValidationInput, validate};
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
@@ -9,6 +12,7 @@ extern "C" {
 }
 
 fn decode_hex_code(input: &str) -> Result<Vec<u8>, JsError> {
+    let input = input.strip_prefix("0x").unwrap_or(input);
     hex::decode(input).map_err(|e| JsError::new(&format!("Failed to decode code hex input: {e}")))
 }
 
@@ -376,5 +380,124 @@ pub fn contract_info(code: &str, args: JsValue) -> Result<JsValue, JsError> {
 
     let info = crate::contract_info(cargs);
     Ok(serde_wasm_bindgen::to_value(&info)?)
+}
+// }}}
+
+// {{{ Storage validation
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StorageValidationJsInput {
+    bytecode: String,
+    virtual_storage_layout: VirtualStorageLayout,
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const DOC_STORAGE_VALIDATION: &str = r#"
+export type VirtualStorageLayoutKind = "normal" | "immutable";
+export type VirtualStorageLayoutSource =
+    | "erc8042"
+    | "erc7201"
+    | "slot-assignment"
+    | "implicit-state";
+
+export type VirtualStorageLayoutRecord = {
+    id: string,
+    virtualPath: string,
+    parentVirtualPath?: string,
+    kind: VirtualStorageLayoutKind,
+    codeWidth: number,
+    layout: string[],
+    serializedLayout: string[],
+    slots: number[][],
+    source: VirtualStorageLayoutSource,
+    sourceName: string,
+    contractName: string,
+    structName?: string,
+    diamondName?: string,
+};
+
+export type VirtualStorageLayout = {
+    records: VirtualStorageLayoutRecord[],
+};
+
+export type StorageLocation = {
+    slot: string,
+    offset: number,
+    selector: string,
+    pc?: number,
+    symbolicPath: string,
+};
+
+export type StorageCollision = {
+    location: StorageLocation,
+    virtualPath: string,
+    expectedType: string,
+    observedType: string,
+    reason: string,
+};
+
+export type ValidatedVariable = {
+    location: StorageLocation,
+    virtualPath: string,
+    expectedType: string,
+    observedType: string,
+};
+
+export type UncertainStorageScope = {
+    location: StorageLocation,
+    virtualPath?: string,
+    reason: string,
+};
+
+export type StorageDiagnostic = {
+    selector: string,
+    pc?: number,
+    symbolicPath: string,
+    message: string,
+};
+
+export type DelegateCallWarning = {
+    callerSelector: string,
+    pc: number,
+    target: string,
+    selector?: string,
+    reason: string,
+};
+
+export type StorageValidationReport = {
+    collisions: StorageCollision[],
+    validatedVariables: ValidatedVariable[],
+    uncertainScopes: UncertainStorageScope[],
+    diagnostics: StorageDiagnostic[],
+    delegatecallWarnings: DelegateCallWarning[],
+};
+
+/**
+ * Validates direct persistent SSTORE evidence in runtime bytecode against the
+ * full-diamond Virtual Storage Layout.
+ *
+ * This operation is local and synchronous. Delegatecall targets are reported
+ * as warnings when their runtime context is unavailable; the host is
+ * responsible for resolving and validating those targets in later calls.
+ */
+export function validateStorage(input: {
+    bytecode: string,
+    virtualStorageLayout: VirtualStorageLayout,
+}): StorageValidationReport;
+"#;
+
+/// Validates direct persistent SSTORE evidence against a full-diamond VSL.
+///
+/// The bytecode accepts either a prefixed (`0x...`) or unprefixed hexadecimal
+/// runtime bytecode string. This entrypoint never performs RPC requests.
+#[wasm_bindgen(js_name = validateStorage, skip_typescript, skip_jsdoc)]
+pub fn validate_storage(input: JsValue) -> Result<JsValue, JsError> {
+    let input: StorageValidationJsInput = serde_wasm_bindgen::from_value(input)?;
+    let bytecode = decode_hex_code(&input.bytecode)?;
+    let report = validate(&StorageValidationInput {
+        bytecode,
+        virtual_storage_layout: input.virtual_storage_layout,
+    });
+    Ok(serde_wasm_bindgen::to_value(&report)?)
 }
 // }}}
