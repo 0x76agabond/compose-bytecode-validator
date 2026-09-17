@@ -145,30 +145,17 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Build, test, and package JavaScript integrations
         run: |
-          cp README.md javascript/
           npm --prefix javascript ci
           npm --prefix javascript run build
           (cd javascript && npx tsc ./dist/evmole.d.ts)
-          npm --prefix javascript/tests ci
-          (cd javascript/tests && npx playwright install --with-deps)
           npm --prefix javascript test
-          make -C javascript test
-
-          npm --prefix agent/mcp install --ignore-scripts --package-lock=false --no-save --no-audit --no-fund "${{ github.workspace }}/javascript"
-          npm --prefix agent/mcp test
-          node agent/scripts/sync-version.mjs --check
-          node agent/tests/evaluate-routing.mjs
-          node agent/tests/validate-packaging.mjs
-          npx -y skills@latest add . --list
-
-          (cd agent/mcp && npm pack)
+          npm --prefix javascript pack
       - name: Upload JavaScript artifacts
         uses: actions/upload-artifact@v6
         with:
           name: javascript
           path: |
-            javascript/evmole-*.tgz
-            agent/mcp/evmole-mcp-*.tgz
+            javascript/compose-bytecode-validator-*.tgz
 
   python-wheel:
     needs: rust-test

@@ -33,7 +33,6 @@
     "dist/evmole.mjs",
     "dist/evmole_node.cjs",
     "dist/evmole_node.mjs",
-    "dist/evmole_wasm_import.js",
     "dist/evmole_wasm_import.js"
   ],
   "exports": {
