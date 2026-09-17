@@ -149,7 +149,7 @@ jobs:
           npm --prefix javascript run build
           (cd javascript && npx tsc ./dist/evmole.d.ts)
           npm --prefix javascript test
-          npm --prefix javascript pack
+          (cd javascript && npm pack)
       - name: Upload JavaScript artifacts
         uses: actions/upload-artifact@v6
         with:
