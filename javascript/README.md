@@ -4,7 +4,7 @@
 storage validation. It compares a facet's runtime bytecode with the canonical
 full-diamond Virtual Storage Layout (VSL) generated from Solidity source.
 
-It is intended to be called by Compose tooling. Consumers need Node.js, but do
+It is intended to be called by Compose tooling. Consumers need Node.js 20 or newer, but do
 not need Rust, Cargo, or `wasm-pack`.
 
 ## Install
