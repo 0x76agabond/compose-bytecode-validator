@@ -1,7 +1,7 @@
 {
   "name": "compose-bytecode-validator",
   "description": "WebAssembly bytecode storage validator for Compose diamonds",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "license": "MIT",
   "repository": {
     "type": "git",
