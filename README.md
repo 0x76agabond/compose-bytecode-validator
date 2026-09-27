@@ -289,11 +289,11 @@ as container metadata rather than as element writes.
 
 | Variant | Collisions | Validated | Uncertain |
 | --- | ---: | ---: | ---: |
-| Deployed target graph | 1 | 4 | 0 |
+| Deployed target graph | 1 | 0 | 4 |
 
 **Characteristics:** Anvil-backed target resolution through immutable, storage, calldata, transient, symbolic, empty-code, missing-selector, and nested calls.
 
-**Conclusion:** High confidence for recovered target code and selectors, no conclusion for untraceable targets.
+**Conclusion:** High confidence for recovered target code and selectors, single-member struct projections and untraceable targets remain non-conclusive.
 
 #### Fixture 10: Assembly Evidence
 
@@ -360,9 +360,9 @@ For `bytes[]` and `string[]`, the outer array header can still validate while
 each element and its payload remain uncertain. A proven incompatible outer
 container or root shape is still reported as a collision.
 
-The same ambiguity extends to `string[]` and a one-member
-an array of structs with a `bytes data` field, both use a one-slot array element whose payload has
-the same bytes/string encoding. Payload writes and empty `push()` operations
+The same ambiguity extends to `string[]` and a one-member array of structs with
+a `bytes data` field, both use a one-slot array element whose payload has the
+same bytes/string encoding. Payload writes and empty `push()` operations
 therefore remain scoped uncertainty unless another recovered member proves a
 different struct shape.
 
@@ -371,6 +371,15 @@ different struct shape.
 For some nested dynamic-array `push()` paths, the tracer loses an element child
 boundary. It reports a scoped uncertainty for the affected array-length write,
 independently recovered member writes still validate or collide normally.
+
+### Clear-only Writes
+
+Solidity can delete a packed struct with `SLOAD -> AND(mask) -> SSTORE` and no
+replacement value. A Compose-owned write-effect pass recovers the same-slot
+clear range without changing EVMole's storage tracer. Its root, container path,
+and starting packed field are matched against VSL, but a zeroing operation
+carries no value-type evidence, so it is reported as scoped uncertainty rather
+than validation or collision.
 
 ### Inline Assembly
 

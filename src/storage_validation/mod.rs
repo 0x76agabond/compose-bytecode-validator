@@ -6,6 +6,7 @@
 
 mod types;
 mod vsl;
+mod write_effect;
 
 use crate::{
     Slot,
@@ -22,6 +23,7 @@ use vsl::{
     has_container_shape_contradiction, raw_expected_type_at, storage_trace_hints,
     virtual_struct_child,
 };
+use write_effect::ComposeWriteEffect;
 
 #[cfg(feature = "rpc")]
 pub use types::HttpRpcCodeSource;
@@ -110,7 +112,7 @@ type WriteEvidenceKey = (Option<Slot>, usize, u8, [u8; 4], Option<usize>, String
 /// Validates persistent `SSTORE` evidence against the supplied full-diamond VSL.
 pub fn validate(input: &StorageValidationInput) -> StorageValidationReport {
     let trace = trace_layouts(input, None);
-    validate_layouts(&trace.layouts, &input.virtual_storage_layout)
+    validate_layouts(&trace, &input.virtual_storage_layout)
 }
 
 /// Validates direct writes and recursively follows constant delegatecall targets.
@@ -123,7 +125,7 @@ pub fn validate_with_delegate_calls(
     context: DelegateCallValidationContext,
 ) -> StorageValidationReport {
     let trace = trace_layouts(input, None);
-    let mut report = validate_layouts(&trace.layouts, &input.virtual_storage_layout);
+    let mut report = validate_layouts(&trace, &input.virtual_storage_layout);
     let mut visited = BTreeSet::new();
     follow_delegate_calls(
         &trace.layouts.delegate_calls,
@@ -140,6 +142,7 @@ pub fn validate_with_delegate_calls(
 struct TraceLayouts {
     layouts: StorageLayouts,
     analyzed_selectors: BTreeSet<[u8; 4]>,
+    write_effects: write_effect::ComposeWriteEffects,
 }
 
 fn trace_layouts(
@@ -178,6 +181,19 @@ fn trace_layouts(
         &trace_hints,
         selected_selectors.is_none() && functions.is_empty(),
     );
+    let clear_candidate_selectors = layouts
+        .evidence
+        .iter()
+        .filter(|evidence| {
+            evidence.domain == "persistent"
+                && evidence.is_write
+                && evidence.write_pc.is_some()
+                && evidence.field_width.is_none()
+        })
+        .map(|evidence| evidence.selector)
+        .collect();
+    let write_effects =
+        write_effect::trace(&input.bytecode, &functions, &clear_candidate_selectors);
 
     if std::env::var_os("COMPOSE_TRACE_STORAGE").is_some() {
         for evidence in &layouts.evidence {
@@ -205,23 +221,31 @@ fn trace_layouts(
     TraceLayouts {
         layouts,
         analyzed_selectors,
+        write_effects,
     }
 }
 
 fn validate_layouts(
-    layouts: &StorageLayouts,
+    trace: &TraceLayouts,
     layout: &VirtualStorageLayout,
 ) -> StorageValidationReport {
+    let layouts = &trace.layouts;
     let mut report = StorageValidationReport::default();
     collect_byte_string_access_uncertainties(layouts, layout, &mut report);
     let write_evidence = best_write_evidence(&layouts.evidence);
     let supported_projection_groups =
-        structurally_supported_projection_groups(&write_evidence, layout);
+        structurally_supported_projection_groups(&write_evidence, layout, &trace.write_effects);
     for evidence in write_evidence
         .into_iter()
         .filter(|evidence| evidence.domain == "persistent")
     {
-        validate_write(evidence, layout, &supported_projection_groups, &mut report);
+        validate_write(
+            evidence,
+            layout,
+            &supported_projection_groups,
+            &trace.write_effects,
+            &mut report,
+        );
     }
     report
 }
@@ -229,12 +253,17 @@ fn validate_layouts(
 fn structurally_supported_projection_groups(
     evidence: &[&StorageEvidence],
     layout: &VirtualStorageLayout,
+    write_effects: &write_effect::ComposeWriteEffects,
 ) -> BTreeSet<String> {
     let mut positions = BTreeMap::<String, BTreeSet<(usize, u8)>>::new();
-    for item in evidence
-        .iter()
-        .filter(|item| item.domain == "persistent" && item.value_type_known)
-    {
+    for item in evidence.iter().filter(|item| {
+        item.domain == "persistent"
+            && item.value_type_known
+            && matches!(
+                write_effect::classify(item, write_effects),
+                ComposeWriteEffect::Assignment
+            )
+    }) {
         let VslPathMatch::Matched(matched) = match_vsl_variable(item, layout) else {
             continue;
         };
@@ -384,7 +413,7 @@ fn follow_delegate_calls(
             });
             continue;
         }
-        let target_report = validate_layouts(&target_trace.layouts, layout);
+        let target_report = validate_layouts(&target_trace, layout);
         merge_report(report, target_report);
         follow_delegate_calls(
             &target_trace.layouts.delegate_calls,
@@ -555,8 +584,20 @@ fn validate_write(
     evidence: &StorageEvidence,
     layout: &VirtualStorageLayout,
     supported_projection_groups: &BTreeSet<String>,
+    write_effects: &write_effect::ComposeWriteEffects,
     report: &mut StorageValidationReport,
 ) {
+    let effect = write_effect::classify(evidence, write_effects);
+    let mut normalized_evidence;
+    let evidence = match effect {
+        ComposeWriteEffect::ClearRange { offset, .. } if offset != evidence.offset => {
+            normalized_evidence = evidence.clone();
+            normalized_evidence.offset = offset;
+            &normalized_evidence
+        }
+        ComposeWriteEffect::Assignment | ComposeWriteEffect::ClearRange { .. } => evidence,
+    };
+
     let Some(slot) = evidence.slot else {
         report.diagnostics.push(StorageDiagnostic {
             selector: hex(&evidence.selector),
@@ -598,6 +639,18 @@ fn validate_write(
             return;
         }
     };
+
+    if let ComposeWriteEffect::ClearRange { offset, width } = effect {
+        report.uncertain_scopes.push(UncertainStorageScope {
+            location,
+            virtual_path: Some(matched.virtual_path),
+            reason: format!(
+                "clear-only write covers byte range {offset}..{} but carries no value-type evidence",
+                usize::from(offset) + usize::from(width / 8)
+            ),
+        });
+        return;
+    }
 
     let Some(expected_type) = matched.expected_type else {
         report.uncertain_scopes.push(UncertainStorageScope {
@@ -1668,7 +1721,13 @@ mod tests {
         };
         let mut report = StorageValidationReport::default();
 
-        validate_write(&evidence, &layout, &BTreeSet::new(), &mut report);
+        validate_write(
+            &evidence,
+            &layout,
+            &BTreeSet::new(),
+            &Default::default(),
+            &mut report,
+        );
 
         assert_eq!(report.collisions.len(), 1);
         assert!(report.uncertain_scopes.is_empty());
@@ -1700,7 +1759,13 @@ mod tests {
         };
         let mut report = StorageValidationReport::default();
 
-        validate_write(&evidence, &layout, &BTreeSet::new(), &mut report);
+        validate_write(
+            &evidence,
+            &layout,
+            &BTreeSet::new(),
+            &Default::default(),
+            &mut report,
+        );
 
         assert!(report.collisions.is_empty());
         assert_eq!(report.uncertain_scopes.len(), 1);

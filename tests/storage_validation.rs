@@ -49,6 +49,56 @@ fn normal_layout() -> VirtualStorageLayoutRecord {
     }
 }
 
+fn packed_struct_clear_layout() -> VirtualStorageLayout {
+    let root_path = "compose.fixture.packed-struct-clear";
+    VirtualStorageLayout {
+        records: vec![
+            VirtualStorageLayoutRecord {
+                id: "0x16a861a6371ce33e2053e823c07ec26da3569fe1bdc9d1885d0995727db10890".to_owned(),
+                virtual_path: root_path.to_owned(),
+                parent_virtual_path: None,
+                kind: VirtualStorageLayoutKind::Normal,
+                code_width: 1,
+                layout: ["0xf1", "0x53", "0xff"]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
+                serialized_layout: ["0x01", "0xf1", "0x53", "0xff"]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
+                slots: vec![vec![256]],
+                source: VirtualStorageLayoutSource::Erc8042,
+                source_name: "PackedStructClear.sol".to_owned(),
+                contract_name: "PackedStructClear".to_owned(),
+                struct_name: Some("Storage".to_owned()),
+                diamond_name: None,
+            },
+            VirtualStorageLayoutRecord {
+                id: "0xfd9e0ce174a083b23f7c56dd6c49e71f06e6bb4e359f3e153b6c87effc9c3f9d".to_owned(),
+                virtual_path: format!("{root_path}.0"),
+                parent_virtual_path: Some(root_path.to_owned()),
+                kind: VirtualStorageLayoutKind::Normal,
+                code_width: 1,
+                layout: ["0x03", "0x53", "0x53"]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
+                serialized_layout: ["0x01", "0x03", "0x53", "0x53"]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
+                slots: vec![vec![160, 32, 32]],
+                source: VirtualStorageLayoutSource::Erc8042,
+                source_name: "PackedStructClear.sol".to_owned(),
+                contract_name: "PackedStructClear".to_owned(),
+                struct_name: Some("FacetNode".to_owned()),
+                diamond_name: None,
+            },
+        ],
+    }
+}
+
 #[test]
 fn validates_recovered_write_against_the_vsl() {
     let report = validate(&StorageValidationInput {
@@ -85,4 +135,36 @@ fn reports_actual_bytecode_that_overwrites_a_packed_vsl_slot() {
     assert_eq!(report.collisions[0].expected_type, "bytes4");
     assert_eq!(report.collisions[0].observed_type, "uint256");
     assert!(report.collisions[0].location.pc.is_some());
+}
+
+#[test]
+fn treats_a_packed_struct_delete_as_clear_only_evidence() {
+    let report = validate(&StorageValidationInput {
+        bytecode: decode_hex(include_str!(
+            "fixtures/storage-validation/packed-struct-clear-bytecode.txt"
+        )),
+        virtual_storage_layout: packed_struct_clear_layout(),
+    });
+
+    assert!(report.collisions.is_empty(), "{report:#?}");
+    assert!(
+        report.uncertain_scopes.iter().any(|scope| {
+            scope.virtual_path.as_deref()
+                == Some("compose.fixture.packed-struct-clear.0.slot[0].byte[0]")
+                && scope
+                    .reason
+                    .contains("clear-only write covers byte range 0..28")
+        }),
+        "{report:#?}"
+    );
+    assert!(
+        report.uncertain_scopes.iter().any(|scope| {
+            scope.virtual_path.as_deref()
+                == Some("compose.fixture.packed-struct-clear.0.slot[0].byte[20]")
+                && scope
+                    .reason
+                    .contains("clear-only write covers byte range 20..24")
+        }),
+        "{report:#?}"
+    );
 }

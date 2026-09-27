@@ -282,6 +282,14 @@ stride, and nested container/virtual-struct paths. The fixture families
 exercise the same recursive path matcher for mapping structs, array structs,
 and mapping-to-array-to-struct layouts.
 
+EVMole's generic storage tracer remains unchanged. For widthless write
+evidence, `src/storage_validation/write_effect.rs` runs a focused Compose pass
+over only the affected selectors. It distinguishes a same-slot
+`SLOAD -> AND(mask) -> SSTORE` clear from a masked copy to another slot and
+recovers the cleared byte range. Because a clear carries no value-type signal,
+the matcher reports that range as scoped uncertainty rather than inferring a
+scalar type from the bits retained by the mask.
+
 The matcher has generic transition rules rather than fixture rules:
 
 1. A plain storage path uses VSL's physical slot and packed-byte table to select
@@ -316,7 +324,9 @@ flowchart LR
     hints --> engine
     engine --> evidence["StorageEvidence<br/>operation, ordered symbolic path,<br/>slot delta, bit range, type signal"]
 
+    bytecode --> effects["Compose write-effect pass<br/>same-slot clear ranges"]
     evidence --> matcher["Compose persistent-write validator"]
+    effects --> matcher
     vsl --> matcher
     matcher --> evidenceVerdict["collisions | validated | scoped uncertainty | diagnostics"]
     evidenceVerdict --> hostPolicy["Compose host trust policy<br/>per VSL identifier"]
@@ -359,15 +369,17 @@ separate from the bytecode verdict.
 `src/arguments/mod.rs` remains valuable for recovering calldata type anchors.
 `src/storage_validation/vsl.rs` owns VSL decoding, trace hints, and semantic
 comparison. `src/storage_validation/mod.rs` owns the recursive VSL path walk
-and verdict policy. `src/compose/calldata.rs` is a Compose-only calldata
-adapter for forwarded delegatecall payloads; it does not alter the generic
-`src/evm/vm.rs` behavior.
+and verdict policy. `src/storage_validation/write_effect.rs` owns the focused
+same-slot clear classifier. `src/compose/calldata.rs` is a Compose-only
+calldata adapter for forwarded delegatecall payloads; neither Compose module
+alters the generic `src/evm/vm.rs` behavior.
 
 The Compose matcher belongs above the generic engine and owns policy:
 
 ```text
 proven root/path/container/bit-range/type contradiction  -> collision
 known storage location with unresolved type/path         -> scoped uncertainty
+same-slot clear range without a replacement value        -> scoped uncertainty
 lone compatible struct projection under a container      -> scoped uncertainty
 unresolved storage root                                  -> diagnostic
 compatible evidence with sufficient structural support  -> validated variable
