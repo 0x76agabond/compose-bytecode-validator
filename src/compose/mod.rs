@@ -11,12 +11,13 @@ pub(crate) mod calldata;
 pub mod compose;
 pub mod compose_vsl_bias;
 mod matcher;
+pub(crate) mod storage;
 mod types;
 mod vsl_semantics;
 
-use crate::{
-    arguments::function_arguments, selectors::function_selectors, storage::contract_storage,
-};
+use crate::{arguments::function_arguments, selectors::function_selectors};
+
+use self::storage::contract_storage;
 
 use types::RawStorageObservation;
 pub use types::{

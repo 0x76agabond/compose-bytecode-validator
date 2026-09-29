@@ -1,13 +1,12 @@
 use crate::{
     DynSolType, Selector,
-    compose::calldata::ComposeCallData,
+    compose::{calldata::ComposeCallData, storage::StorageEvidence},
     evm::{
         U256,
         calldata::{CallDataLabel, CallDataLabelType},
         op,
         vm::{StepResult, Vm},
     },
-    storage::StorageEvidence,
     utils::execute_until_function_start,
 };
 use std::{

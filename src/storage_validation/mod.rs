@@ -11,11 +11,11 @@ mod write_effect;
 use crate::{
     Slot,
     arguments::function_arguments,
-    selectors::function_selectors,
-    storage::{
+    compose::storage::{
         DelegateCallEvidence, DelegateCallTarget, StorageEvidence, StorageLayouts,
         StoragePathSegment, contract_storage_with_hints_options_compose,
     },
+    selectors::function_selectors,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use vsl::{
@@ -771,6 +771,20 @@ fn validate_write(
                 observed_type: observed_type.clone(),
                 reason: "recovered container shape contradicts the VSL type".to_owned(),
             });
+        } else if observed_type == expected_type {
+            let projection_is_supported = matched.struct_projection.as_ref().is_none_or(|item| {
+                supported_projection_groups.contains(&item.container_virtual_path)
+            });
+            if projection_is_supported {
+                report.validated_variables.push(ValidatedVariable {
+                    location,
+                    virtual_path: matched.virtual_path,
+                    expected_type,
+                    observed_type,
+                });
+            } else {
+                push_terminal_projection_uncertainty(report, location, matched.virtual_path);
+            }
         } else {
             report.uncertain_scopes.push(UncertainStorageScope {
                 location,
@@ -1401,10 +1415,10 @@ mod tests {
     };
     use crate::{
         Selector, Slot,
+        compose::storage::{DelegateCallEvidence, DelegateCallTarget, StorageEvidence},
         compose::{
             VirtualStorageLayoutKind, VirtualStorageLayoutRecord, VirtualStorageLayoutSource,
         },
-        storage::{DelegateCallEvidence, DelegateCallTarget, StorageEvidence},
         storage_validation::{
             DelegateCallValidationContext, RuntimeCodeSource, StorageValidationReport,
             VirtualStorageLayout,

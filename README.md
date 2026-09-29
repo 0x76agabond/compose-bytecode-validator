@@ -148,9 +148,11 @@ against the canonical VSL.
 | `11-solady-erc721` | Solady-style ownership, balance/aux, and operator-approval coordinates across three ERC-8110 domains | Four custom writes remain unresolved evidence rather than false validation or collision. |
 
 An inferred fallback `uint256` cannot prove a collision. The raw tracer marks
-whether the write value type was actually recovered, fallback values are
-reported only as scoped uncertainty. Dynamic-array length writes are compared
-as container metadata rather than as element writes.
+whether the write value type was actually recovered. A fallback width token
+validates only when it exactly matches the VSL field token, a different token
+remains uncertain or collides when bytecode proves the difference.
+Dynamic-array length writes are compared as container metadata rather than as
+element writes.
 
 ### Current Result Snapshot
 
@@ -454,9 +456,12 @@ Set `FOUNDRY_FORGE` or `FOUNDRY_CAST` when the executables are not on `PATH`.
 [Architecture.md](./Architecture.md) documents the inherited symbolic-execution
 engine and the Compose validator boundary. The main extension points are:
 
-- `src/storage/mod.rs`: raw storage evidence before EVMole collapses records,
+- `src/storage/mod.rs`: unchanged upstream EVMole storage recovery,
+- `src/compose/storage.rs`: Compose-only raw evidence, VSL hints, paths, and
+  delegatecall tracing,
 - `src/storage_validation/`: active VSL-driven persistent-write validator,
-- `src/compose/`: historical unbiased and VSL-bias comparison experiments,
+- `src/compose/compose.rs` and `src/compose/compose_vsl_bias.rs`: historical
+  inference experiments,
 - `tools/`: VSL generation from Solidity AST,
 - `tests/fixtures/evmole/`: canonical VSL and incompatible bytecode challenge
   sources for each fixture case.

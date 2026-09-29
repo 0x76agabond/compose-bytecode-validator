@@ -1,7 +1,6 @@
 use crate::{
     DynSolType, Slot,
-    compose::{VirtualStorageLayout, VirtualStorageLayoutRecord},
-    storage::StorageTraceHints,
+    compose::{VirtualStorageLayout, VirtualStorageLayoutRecord, storage::StorageTraceHints},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -16,6 +15,15 @@ pub(crate) fn compare_semantic_types(inferred: &str, expected: &str) -> Semantic
     let inferred = normalize(inferred);
     let expected = normalize(expected);
     if inferred == expected {
+        return SemanticCompatibility::Compatible;
+    }
+    if matches!(
+        (inferred.as_str(), expected.as_str()),
+        ("uint256", "bytes32") | ("bytes32", "uint256")
+    ) {
+        // A full ABI/storage word carries no opcode-level distinction between
+        // these types. Treat the recovered uint256 default as representation
+        // evidence, while the VSL remains the semantic type anchor.
         return SemanticCompatibility::Compatible;
     }
     if inferred == "unknown" || expected == "unknown" || expected == "function-internal" {
@@ -654,6 +662,22 @@ mod tests {
                 "mapping(bytes4 => address)",
                 "mapping(bytes4 => virtual-struct(fixture.0))"
             ),
+            SemanticCompatibility::Contradiction
+        );
+    }
+
+    #[test]
+    fn accepts_full_word_uint_and_bytes32_representations() {
+        assert_eq!(
+            compare_semantic_types("uint256", "bytes32"),
+            SemanticCompatibility::Compatible
+        );
+        assert_eq!(
+            compare_semantic_types("bytes32", "uint256"),
+            SemanticCompatibility::Compatible
+        );
+        assert_eq!(
+            compare_semantic_types("uint8", "bool"),
             SemanticCompatibility::Contradiction
         );
     }

@@ -10,7 +10,7 @@ const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const npmOptions = process.platform === "win32" ? { shell: true } : {};
 
-test("npm package exports direct storage validation", { timeout: 120_000 }, async () => {
+test("npm package exports upstream and Compose storage APIs", { timeout: 120_000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), "evmole-package-"));
   const environment = {
     ...process.env,
@@ -58,6 +58,18 @@ test("npm package exports direct storage validation", { timeout: 120_000 }, asyn
   });
   assert.deepEqual(report.collisions, []);
   assert.ok(Array.isArray(report.uncertainScopes));
+
+  const contract = library.contractInfo("6001600055", { storage: true });
+  assert.deepEqual(contract.storage, [
+    {
+      slot: "0".repeat(64),
+      offset: 0,
+      type: "uint256",
+      reads: [],
+      writes: [],
+    },
+  ]);
+  assert.deepEqual(contract.transientStorage, []);
 
   const packageJson = JSON.parse(
     await readFile(

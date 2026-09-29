@@ -282,8 +282,11 @@ stride, and nested container/virtual-struct paths. The fixture families
 exercise the same recursive path matcher for mapping structs, array structs,
 and mapping-to-array-to-struct layouts.
 
-EVMole's generic storage tracer remains unchanged. For widthless write
-evidence, `src/storage_validation/write_effect.rs` runs a focused Compose pass
+EVMole's generic storage tracer remains unchanged in `src/storage/mod.rs`.
+The active validator uses the Compose-owned extension in
+`src/compose/storage.rs`, which retains raw evidence, accepts VSL trace hints,
+and records delegatecalls without changing EVMole's public storage output. For
+widthless write evidence, `src/storage_validation/write_effect.rs` runs a focused Compose pass
 over only the affected selectors. It distinguishes a same-slot
 `SLOAD -> AND(mask) -> SSTORE` clear from a masked copy to another slot and
 recovers the cleared byte range. Because a clear carries no value-type signal,
@@ -311,8 +314,9 @@ Fixtures supply different bytecode and canonical VSL inputs to challenge these
 same transitions. They do not register handling code for individual Solidity
 patterns.
 
-`src/compose/` contains earlier unbiased and VSL-bias experiments. They are
-research comparisons, not part of the active verdict.
+`src/compose/compose.rs` and `src/compose/compose_vsl_bias.rs` contain earlier
+unbiased and VSL-bias experiments. They are research comparisons, while
+`src/compose/storage.rs` is part of the active validator.
 
 ```mermaid
 flowchart LR
@@ -333,8 +337,9 @@ flowchart LR
     assembly --> hostPolicy
 ```
 
-The primary seam is `src/storage/mod.rs`, after a storage access has a symbolic
-slot expression and before `finalize_slot_records()` groups and flattens it.
+The primary seam is `src/compose/storage.rs`, after a storage access has a
+symbolic slot expression and before `finalize_slot_records()` groups and
+flattens it. `src/storage/mod.rs` remains the upstream EVMole implementation.
 `StorageEvidence` retains:
 
 - read/write operation and persistent/transient domain;
@@ -414,8 +419,9 @@ collision verdict. Unknown or flattened evidence must never prove `safe`.
   parallel.
 - Do not turn unknown symbolic values into a concrete slot/type merely to
   produce a verdict.
-- Keep VSL-derived recovery hints separate from compatibility policy: hints may
-  improve tracing but cannot turn ambiguous evidence into a validated result.
+- Keep VSL-derived recovery hints separate from compatibility policy. Hints may
+  anchor a key/path or confirm an identical physical width token, but they may
+  not erase a different recovered type, width, offset, or container shape.
 - Keep VSL decoding and compatibility policy in the Compose host layer. The
   generic engine recovers bytecode facts; Compose decides the verdict.
 
@@ -430,7 +436,8 @@ collision verdict. Unknown or flattened evidence must never prove `safe`.
 | Synthetic calldata | `src/evm/calldata.rs`, `src/arguments/calldata.rs` |
 | Selector recovery | `src/selectors/mod.rs` |
 | ABI type recovery | `src/arguments/mod.rs` |
-| Storage tracing and finalization | `src/storage/mod.rs` |
+| Upstream EVMole storage output | `src/storage/mod.rs` |
+| Compose evidence and hinted storage tracing | `src/compose/storage.rs` |
 | VSL decoding and write validation | `src/storage_validation/` |
 | CFG | `src/control_flow_graph/` |
 | JavaScript binding | `src/interface_js.rs`, `javascript/` |
